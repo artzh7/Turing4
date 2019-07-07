@@ -4,85 +4,164 @@ import java.util.*;
 // - переход в новое состояние
 // - запись на ленту ИЛИ сдвиг
 
-public class Machine {
+class Machine {
     private Tape tape;
     private Table table;
-    private int currentState = 1;
+    private int
+            ms, steps,
+            currentStep = 1,
+            currentState = 1;
+    private volatile Process process = Process.IDLE;
 
-    static String leftException = "Can't move the head left";
-    static String illegalChar = "Illegal symbol was found";
+    static String
+            leftException = "can't move the head left",
+            illegalCharOnTape = "illegal symbol on tape was found";
 
-    Machine (String tape, int start, List<String> table){
+    Machine (String tape, int start, int steps, int ms, List<String> table){
         this.tape = new Tape(tape, start);
         this.table = new Table(table);
+        this.ms = ms;
+        this.steps = steps;
     }
 
-    public int start(){
+    Process start() throws InterruptedException {
         // проверка корректности ленты
-        for (char ch : tape.symbols)
+        for (char ch : tape.getSymbols())
             if (ch == '<' || ch == '>'){
-                System.out.println(Machine.illegalChar);
-                return -1;
+                System.out.println(Machine.illegalCharOnTape);
+                return Process.FAILURE;
             }
+
         // проверка корректности таблицы инструкций
         // .......
 
         // работа машины на основе таблицы состояний
-        for (;;) {
-            char curr = tape.symbols.get(tape.current);     // смотрим на символ под указателем
-            int row = table.symbols.indexOf(curr);          // ищем строку с инструкциями под этот символ
-            Table.Action action = table.actions.get(row).get(currentState-1); // получаем действие под символ+состояние
-            switch (action.symbol){
-                case '<':
-                    try {
-                        tape.left();
-                    } catch (ArrayIndexOutOfBoundsException e) {
-                        System.out.println(e.getMessage());
-                        return -1;
-                    }
-                    break;
-                case '>':
-                    tape.right();
-                    break;
-                case '=':
-                    break;
-                default:
-                    tape.symbols.set(tape.current, action.symbol);
-                    break;
-            }
-            if (action.state == 0) {
-                break;
-            } else {
-                currentState = action.state;
-            }
-        }
-        return 0;
+        process = Process.RUNNING;
+        System.out.println("running");
+        if (ms > 0)
+            System.out.println("\n0:\t" + tape);
+        performing.start();
+        if (ms > 0) listening.start();
+        performing.join();
+        listening.interrupt();
+        scanner = null;
+        return process;
     }
 
-    public void print(String outputFilePath) throws FileNotFoundException {
+    private Process perform(){
+        char curr = tape.getSymbols().get(tape.getCurrent());
+            // смотрим на символ под указателем
+        int row = table.getSymbols().indexOf(curr);
+            // ищем строку с инструкциями под этот символ
+        Table.Action action = table.getActions().get(row).get(currentState-1);
+            // получаем действие под символ+состояние
+
+        switch (action.getSymbol()){
+            case '<':
+                try {
+                    tape.left();
+                } catch (ArrayIndexOutOfBoundsException e) {
+                    System.out.println(e.getMessage());
+                    return Process.FAILURE;
+                }
+                break;
+            case '>':
+                tape.right();
+                break;
+            case '=':
+                break;
+            default:
+                tape.getSymbols().set(tape.getCurrent(), action.getSymbol());
+                break;
+        }
+
+        if (action.getState() == 0) {
+            return Process.IDLE;
+        } else {
+            currentState = action.getState();
+        }
+        return Process.RUNNING;
+    }
+
+    private void pause(){
+        synchronized (this) {
+            if (process == Process.RUNNING) {
+                process = Process.PAUSED;
+                System.out.println("paused");
+            } else if (process == Process.PAUSED) {
+                process = Process.RUNNING;
+                System.out.println("running");
+            }
+        }
+    }
+
+    private void shutdown(){
+        synchronized (this) {
+            if (process == Process.RUNNING || process == Process.PAUSED)
+                process = Process.IDLE;
+        }
+    }
+
+    private volatile Scanner scanner = new Scanner(System.in);
+    private Thread listening = new Thread(() -> {
+        while (process == Process.RUNNING || process == Process.PAUSED){
+            if (scanner.nextLine().equals("s")) shutdown();
+            else pause();
+        }
+        scanner = null;
+    });
+
+    private Thread performing = new Thread(() -> {
+        while (process == Process.RUNNING || process == Process.PAUSED){
+            if (ms > 0) {
+                try {
+                    Thread.sleep(ms);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+            if (process == Process.RUNNING) {
+                process = perform();
+                if (ms > 0)
+                    System.out.println(currentStep + ":\t" + tape);
+                currentStep++;
+                if (steps != -1 && currentStep > steps) {
+                    process = Process.IDLE;
+                }
+            }
+        }
+        if (ms > 0) System.out.println("\nfinished");
+        else System.out.println("finished");
+        listening.interrupt();
+        scanner = null;
+    });
+
+    void print(String outputFilePath) throws FileNotFoundException {
         File output = new File(outputFilePath);
         PrintWriter printWriter = new PrintWriter(output);
-        for (char ch : tape.symbols){
+        for (char ch : tape.getSymbols()){
             printWriter.print(ch);
         }
         printWriter.close();
     }
 }
 
+enum Process {
+    IDLE, RUNNING, PAUSED, FAILURE
+}
+
 class Tape{
-    LinkedList<Character> symbols = new LinkedList<>();
-    int start;
-    int current;
+    private LinkedList<Character> symbols = new LinkedList<>();
+    private int current;
 
     Tape(String tape, int start){
         for (int i = 0; i < tape.length(); i++){
             symbols.add(tape.charAt(i));
         }
-        this.start = start;
         this.current = start;
     }
 
-    public void left(){
+    void left(){
         if (current == 0) {
             throw new ArrayIndexOutOfBoundsException(
                     Machine.leftException
@@ -91,14 +170,30 @@ class Tape{
         current--;
     }
 
-    public void right(){
+    void right(){
         current++;
+    }
+
+    public String toString(){
+        StringBuilder stringBuilder = new StringBuilder();
+        for (char symbol : symbols){
+            stringBuilder.append(symbol);
+        }
+        return stringBuilder.toString();
+    }
+
+    LinkedList<Character> getSymbols() {
+        return symbols;
+    }
+
+    int getCurrent() {
+        return current;
     }
 }
 
 class Table{
-    List<Character> symbols = new ArrayList<>();
-    List<List<Action>> actions = new ArrayList<>();
+    private List<Character> symbols = new ArrayList<>();
+    private List<List<Action>> actions = new ArrayList<>();
 
     Table(List<String> table){
         for (String row : table) {
@@ -126,13 +221,29 @@ class Table{
         }
     }
 
+    List<Character> getSymbols() {
+        return symbols;
+    }
+
+    List<List<Action>> getActions() {
+        return actions;
+    }
+
     class Action{
-        int state;
-        char symbol;
+        private int state;
+        private char symbol;
 
         Action(char symbol, int state){
             this.state = state;
             this.symbol = symbol;
+        }
+
+        int getState() {
+            return state;
+        }
+
+        char getSymbol() {
+            return symbol;
         }
     }
 }

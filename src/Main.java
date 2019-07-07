@@ -5,27 +5,29 @@ import java.util.*;
 
 public class Main {
 
-    @Option(name = "-tape", usage = "input tape file path")
+    @Option(name = "-tape", usage = "input tape file path", required = true)
     private String tapeFilePath = "";
 
     @Option(name = "-start", usage = "index of tape to start")
     private int index = 0;
 
-    @Option(name = "-table", usage = "input table of statements file path")
+    @Option(name = "-steps", usage = "how many steps need to perform")
+    private int steps = -1;
+
+    @Option(name = "-ms", usage = "idle between steps in ms")
+    private int ms = -1;
+
+    @Option(name = "-table", usage = "input table of statements file path", required = true)
     private String tableFilePath = "";
 
-    @Option(name = "-output", usage = "output tape file path")
+    @Option(name = "-output", usage = "output tape file path", required = true)
     private String outputFilePath = "";
 
-    public static void main(String[] args) throws FileNotFoundException {
-
+    public static void main(String[] args) throws FileNotFoundException, InterruptedException {
         new Main().launch(args);
-
-        // java -jar Turing4.jar -tape "files/tape.txt" -start 3 -table "files/table.txt" -output "files/output.txt"
-        // или в указать параметры в конфиге при запуске в среде
     }
 
-    private void launch(String[] args) throws FileNotFoundException {
+    private void launch(String[] args) throws FileNotFoundException, InterruptedException {
         CmdLineParser parser = new CmdLineParser(this);
         try {
             parser.parseArgument(args);
@@ -35,14 +37,13 @@ public class Main {
         }
 
         if (tapeFilePath.isEmpty() || tableFilePath.isEmpty())
-            throw new IllegalArgumentException("Нет пути до файла входных данных");
+            throw new IllegalArgumentException("no input file path");
         if (outputFilePath.isEmpty())
-            throw new IllegalArgumentException("Нет пути до файла выходных данных");
+            throw new IllegalArgumentException("no output file path");
 
         File tapeFile = new File(tapeFilePath);
         int start = index;
         File tableFile = new File(tableFilePath);
-        File output = new File(outputFilePath);
 
         // считываем ленту
         Scanner scanner = new Scanner(tapeFile);
@@ -61,11 +62,13 @@ public class Main {
             table.add(sb.toString());
             sb = new StringBuilder();
         }
+        scanner.close();
 
-        Machine machine = new Machine(tape, start, table);
-        int ret = machine.start();
-        if (ret != -1){
+        Machine machine = new Machine(tape, start, steps, ms, table);
+        Process ret = machine.start();
+        if (ret == Process.IDLE){
             machine.print(outputFilePath);
+            System.out.println("result in output");
         }
     }
 }
