@@ -1,5 +1,6 @@
 import java.io.*;
 import java.util.*;
+import java.util.regex.*;
 
 // - переход в новое состояние
 // - запись на ленту ИЛИ сдвиг
@@ -15,7 +16,8 @@ class Machine {
 
     static String
             leftException = "can't move the head left",
-            illegalCharOnTape = "illegal symbol on tape was found";
+            illegalCharOnTape = "an illegal symbol on the tape was found",
+            incorrectTable = "the table is incorrect";
 
     Machine (String tape, int start, int steps, int ms, List<String> table){
         this.tape = new Tape(tape, start);
@@ -24,22 +26,12 @@ class Machine {
         this.steps = steps;
     }
 
+    // работа машины на основе таблицы состояний
     Process start() throws InterruptedException {
-        // проверка корректности ленты
-        for (char ch : tape.getSymbols())
-            if (ch == '<' || ch == '>'){
-                System.out.println(Machine.illegalCharOnTape);
-                return Process.FAILURE;
-            }
-
-        // проверка корректности таблицы инструкций
-        // .......
-
-        // работа машины на основе таблицы состояний
         process = Process.RUNNING;
         System.out.println("running");
         if (ms > 0)
-            System.out.println("\n0:\t" + tape);
+            System.out.println("\n0  |  " + tape);
         performing.start();
         if (ms > 0) listening.start();
         performing.join();
@@ -49,12 +41,15 @@ class Machine {
     }
 
     private Process perform(){
+        // смотрим на символ под кареткой
         char curr = tape.getSymbols().get(tape.getCurrent());
-            // смотрим на символ под указателем
+        // ищем строку с инструкциями под этот символ
         int row = table.getSymbols().indexOf(curr);
-            // ищем строку с инструкциями под этот символ
+        if (row == -1)
+            throw new IllegalArgumentException("no match between symbol on tape and table");
+        // получаем действие под символ+состояние
         Table.Action action = table.getActions().get(row).get(currentState-1);
-            // получаем действие под символ+состояние
+
 
         switch (action.getSymbol()){
             case '<':
@@ -121,17 +116,25 @@ class Machine {
                 }
             }
             if (process == Process.RUNNING) {
-                process = perform();
+                try {
+                    process = perform();
+                } catch (IllegalArgumentException | IndexOutOfBoundsException e) {
+                    System.out.println(e.getMessage());
+                    process = Process.FAILURE;
+                    break;
+                }
                 if (ms > 0)
-                    System.out.println(currentStep + ":\t" + tape);
+                    System.out.println(currentStep + "  |  " + tape);
                 currentStep++;
                 if (steps != -1 && currentStep > steps) {
                     process = Process.IDLE;
                 }
             }
         }
-        if (ms > 0) System.out.println("\nfinished");
-        else System.out.println("finished");
+        if (ms > 0) System.out.print("\nfinished ");
+        else System.out.print("finished ");
+        if (process == Process.IDLE) System.out.println("successfully");
+        else if (process == Process.FAILURE) System.out.println("with an error");
         listening.interrupt();
         scanner = null;
     });
@@ -155,6 +158,10 @@ class Tape{
     private int current;
 
     Tape(String tape, int start){
+        for (int i = 0; i < tape.length(); i++)
+            if (tape.charAt(i) == '<' || tape.charAt(i) == '>'){
+                throw new IllegalArgumentException(Machine.illegalCharOnTape);
+            }
         for (int i = 0; i < tape.length(); i++){
             symbols.add(tape.charAt(i));
         }
@@ -199,8 +206,17 @@ class Table{
         for (String row : table) {
             char symbol;
             int state;
+            Pattern pattern2 = Pattern.compile("^.?,(\\d+)?$");
+            Matcher matcher;
 
             String[] temp = row.split("\t");
+            if (temp[0].length() != 1)
+                throw new IllegalArgumentException(Machine.incorrectTable);
+            for (int i = 1; i < temp.length; i++){
+                matcher = pattern2.matcher(temp[i]);
+                if (!matcher.matches())
+                    throw new IllegalArgumentException(Machine.incorrectTable);
+            }
             symbols.add(temp[0].charAt(0));
             List<Action> lineOfActions = new ArrayList<>();
 

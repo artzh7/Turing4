@@ -36,10 +36,17 @@ public class Main {
             return;
         }
 
-        if (tapeFilePath.isEmpty() || tableFilePath.isEmpty())
-            throw new IllegalArgumentException("no input file path");
-        if (outputFilePath.isEmpty())
-            throw new IllegalArgumentException("no output file path");
+        try {
+            if (tapeFilePath.isEmpty() || tableFilePath.isEmpty())
+                throw new IllegalArgumentException("no input file path");
+            if (outputFilePath.isEmpty())
+                throw new IllegalArgumentException("no output file path");
+            if (index < 0)
+                throw new IllegalArgumentException("the start index must be non-negative");
+        } catch (IllegalArgumentException e) {
+            System.out.println(e.getMessage());
+            return;
+        }
 
         File tapeFile = new File(tapeFilePath);
         int start = index;
@@ -64,11 +71,18 @@ public class Main {
         }
         scanner.close();
 
-        Machine machine = new Machine(tape, start, steps, ms, table);
-        Process ret = machine.start();
+        Machine machine;
+        Process ret;
+        try {
+            machine = new Machine(tape, start, steps, ms, table);
+            ret = machine.start();
+        } catch (IllegalArgumentException | ArrayIndexOutOfBoundsException e) {
+            System.out.println(e.getMessage());
+            return;
+        }
         if (ret == Process.IDLE){
             machine.print(outputFilePath);
-            System.out.println("result in output");
+            System.out.println("the result is in output file");
         }
     }
 }
