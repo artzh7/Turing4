@@ -179,6 +179,8 @@ class Tape{
 
     void right(){
         current++;
+        if (current >= symbols.size())
+            symbols.add(' ');
     }
 
     public String toString(){
